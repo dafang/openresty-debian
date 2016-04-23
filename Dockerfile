@@ -5,52 +5,51 @@ RUN apt-get update \
     && apt-get install -y \
         wget \
         unzip \
-        build-essential \
         ruby-dev \
-        libreadline6-dev \
-        libncurses5-dev \
+        build-essential \
         perl \
+        libreadline-dev \
+        libncurses5-dev \
+        libssl-dev \
+        libpcre3-dev \
     && gem install fpm
 
 
-RUN mkdir /build /build/root
-WORKDIR /build
+ENV BUILD_DIR /build
+RUN mkdir $BUILD_DIR $BUILD_DIR/root
+WORKDIR $BUILD_DIR
+
+ENV OPENRESTY_VERSION      1.9.7.4
+ENV BUILD_NUM              1
+ENV NGX_LUA_VERSION        0.10.2
+ENV LUAJIT_VERSION_MAJ_MIN 2.1
+ENV LUAJIT_VERSION         2.1.0-beta2
+ENV LUAROCKS_VERSION       2.3.0
+
+ENV ARCH amd64
 
 # Download packages
-RUN wget https://openresty.org/download/ngx_openresty-1.9.3.1.tar.gz \
-    && tar xfz ngx_openresty-1.9.3.1.tar.gz \
-    && wget https://github.com/LuckyGeck/lua-nginx-module/archive/ssl-cert-by-lua.zip \
-    && unzip ssl-cert-by-lua.zip \
-    && wget https://github.com/simpl/ngx_devel_kit/archive/v0.2.19.tar.gz -O ngx_devel_kit-0.2.19.tar.gz \
-    && tar xfz ngx_devel_kit-0.2.19.tar.gz \
-    && wget https://www.openssl.org/source/openssl-1.0.2g.tar.gz \
-    && tar xfz openssl-1.0.2g.tar.gz \
-    && wget ftp://ftp.csx.cam.ac.uk/pub/software/programming/pcre/pcre-8.37.tar.gz \
-    && tar xfz pcre-8.37.tar.gz \
-    && wget http://zlib.net/zlib-1.2.8.tar.gz \
-    && tar xfz zlib-1.2.8.tar.gz \
-    && wget http://luajit.org/download/LuaJIT-2.1.0-beta1.tar.gz \
-    && tar xfz LuaJIT-2.1.0-beta1.tar.gz \
-    && wget https://keplerproject.github.io/luarocks/releases/luarocks-2.2.2.tar.gz \
-    && tar xfz luarocks-2.2.2.tar.gz
+RUN wget https://openresty.org/download/openresty-$OPENRESTY_VERSION.tar.gz \
+    && tar xfz openresty-$OPENRESTY_VERSION.tar.gz \
+    && wget https://github.com/openresty/lua-nginx-module/archive/v$NGX_LUA_VERSION.zip \
+    && unzip v$NGX_LUA_VERSION.zip \
+    && wget http://luajit.org/download/LuaJIT-$LUAJIT_VERSION.tar.gz \
+    && tar xfz LuaJIT-$LUAJIT_VERSION.tar.gz \
+    && wget https://keplerproject.github.io/luarocks/releases/luarocks-$LUAROCKS_VERSION.tar.gz \
+    && tar xfz luarocks-$LUAROCKS_VERSION.tar.gz
 
 
 # Compile and install openresty
-RUN cd /build/ngx_openresty-1.9.3.1 \
+RUN cd $BUILD_DIR/openresty-$OPENRESTY_VERSION \
     && rm -rf bundle/LuaJIT* \
-    && mv /build/LuaJIT-2.1.0-beta1 bundle/ \
-    && rm -rf bundle/ngx_lua-* \
-    && mv /build/lua-nginx-module-ssl-cert-by-lua bundle/ngx_lua-0.9.16 \
-    && patch -p1 -d bundle/nginx-1.9.3 < bundle/ngx_lua-0.9.16/patches/nginx-ssl-cert.patch \
+    && mv $BUILD_DIR/LuaJIT-$LUAJIT_VERSION bundle/ \
     && ./configure \
         --with-http_ssl_module \
         --with-http_stub_status_module \
         --with-http_gzip_static_module \
-        --with-debug \
-        --with-openssl=/build/openssl-1.0.2g \
-        --with-pcre=/build/pcre-8.37 \
+        --with-http_v2_module \
+        #--with-debug \
         --with-pcre-jit \
-        --with-zlib=/build/zlib-1.2.8 \
         --with-cc-opt='-O2 -fstack-protector --param=ssp-buffer-size=4 -Wformat -Werror=format-security -D_FORTIFY_SOURCE=2' \
         --with-ld-opt='-Wl,-Bsymbolic-functions -Wl,-z,relro' \
         --prefix=/usr/share/nginx \
@@ -68,27 +67,29 @@ RUN cd /build/ngx_openresty-1.9.3.1 \
         --user=www-data \
         --group=www-data \
     && make -j4 \
-    && make install DESTDIR=/build/root
+    && make install DESTDIR=$BUILD_DIR/root
 
 
 # Compile LuaRocks
-RUN mkdir -p /usr/share/nginx && ln -s /build/root/usr/share/nginx/luajit /usr/share/nginx/luajit \
-    && cd /build/luarocks-2.2.2 \
-    && ./configure --prefix=/usr/share/nginx/luajit \
-            --with-lua=/usr/share/nginx/luajit \
-            --lua-suffix=jit-2.1.0-beta1 \
-            --with-lua-include=/usr/share/nginx/luajit/include/luajit-2.1 \
-            --with-downloader=wget \
-            --with-md5-checker=openssl \
+RUN mkdir -p /usr/share/nginx && ln -s $BUILD_DIR/root/usr/share/nginx/luajit /usr/share/nginx/luajit \
+    && cd $BUILD_DIR/luarocks-$LUAROCKS_VERSION \
+    && ./configure \
+        --prefix=/usr/share/nginx/luajit \
+        --with-lua=/usr/share/nginx/luajit \
+        --lua-suffix=jit-$LUAJIT_VERSION \
+        --with-lua-include=/usr/share/nginx/luajit/include/luajit-$LUAJIT_VERSION_MAJ_MIN \
+        --with-downloader=wget \
+        --with-md5-checker=openssl \
     && make build \
-    && make install DESTDIR=/build/root \
+    && make install DESTDIR=$BUILD_DIR/root \
     && rm -rf /usr/share/nginx
 
 COPY scripts/* nginx-scripts/
 COPY conf/* nginx-conf/
 
+
 # Add extras to the build root
-RUN cd /build/root \
+RUN cd $BUILD_DIR/root \
     && mkdir \
         etc/init.d \
         etc/logrotate.d \
@@ -98,39 +99,46 @@ RUN cd /build/root \
         var/lib/nginx \
     && mv usr/share/nginx/bin/resty usr/sbin/resty && rm -rf usr/share/nginx/bin \
     && mv usr/share/nginx/nginx/html usr/share/nginx/html && rm -rf usr/share/nginx/nginx \
-    && cp -R /build/ngx_openresty-1.9.3.1/bundle/ngx_lua-0.9.16/lua/ngx usr/share/nginx/lualib \
     && rm etc/nginx/*.default \
-    && cp /build/nginx-scripts/init etc/init.d/nginx \
+    && cp $BUILD_DIR/nginx-scripts/init etc/init.d/nginx \
     && chmod +x etc/init.d/nginx \
-    && cp /build/nginx-conf/logrotate etc/logrotate.d/nginx \
-    && cp /build/nginx-conf/nginx.conf etc/nginx/nginx.conf \
-    && cp /build/nginx-conf/default etc/nginx/sites-available/default
+    && cp $BUILD_DIR/nginx-conf/logrotate etc/logrotate.d/nginx \
+    && cp $BUILD_DIR/nginx-conf/nginx.conf etc/nginx/nginx.conf \
+    && cp $BUILD_DIR/nginx-conf/default etc/nginx/sites-available/default
 
 
 # Build deb
-RUN fpm -s dir -t deb \
+RUN mkdir artifacts \
+    && cd artifacts \
+    && fpm -s dir -t deb \
     -n openresty \
-    -v 1.9.3.1-luckygeck1 \
-    -C /build/root \
-    -p openresty_VERSION_ARCH.deb \
+    -v ${OPENRESTY_VERSION}-${BUILD_NUM} \
+    -C $BUILD_DIR/root \
+    -p openresty_${OPENRESTY_VERSION}-${BUILD_NUM}_${ARCH}.deb \
     --description 'a high performance web server and a reverse proxy server' \
     --url 'http://openresty.org/' \
     --category httpd \
-    --maintainer 'Pavel Sychev <pasha.sychev@gmail.com>' \
+    --maintainer 'Greg Dallavalle <greg.dallavalle@ave81.com>' \
+    # unzip/wget required for luarocks
     --depends wget \
     --depends unzip \
     --depends libncurses5 \
     --depends libreadline6 \
+    --depends openssl \
     --deb-build-depends build-essential \
+    --deb-build-depends perl \
+    --deb-build-depends libreadline-dev \
+    --deb-build-depends libncurses5-dev \
+    --deb-build-depends libssl-dev \
+    --deb-build-depends libpcre3-dev \
     --replaces 'nginx-full' \
     --provides 'nginx-full' \
     --conflicts 'nginx-full' \
+    --conflicts 'nginx-common' \
     --replaces 'nginx-common' \
     --provides 'nginx-common' \
-    --conflicts 'nginx-common' \
-    --after-install nginx-scripts/postinstall \
-    --before-install nginx-scripts/preinstall \
-    --after-remove nginx-scripts/postremove \
-    --before-remove nginx-scripts/preremove \
+    --after-install $BUILD_DIR/nginx-scripts/postinstall \
+    --before-install $BUILD_DIR/nginx-scripts/preinstall \
+    --after-remove $BUILD_DIR/nginx-scripts/postremove \
+    --before-remove $BUILD_DIR/nginx-scripts/preremove \
     etc run usr var
-

@@ -1,10 +1,10 @@
-#! /bin/bash
+#!/usr/bin/env bash
 set -eux
 
-docker build -t luckygeck/openresty-bundle-deb .
-CONTAINER=$(docker create luckygeck/openresty-bundle-deb)
+docker build -t openresty-bundle-deb .
+CONTAINER=$(docker create openresty-bundle-deb)
 if [ ! -d ./artifacts ]; then
     mkdir ./artifacts
 fi
-docker cp $CONTAINER:/build/openresty_1.9.3.1-luckygeck1_amd64.deb ./artifacts/
+docker cp $CONTAINER:/build/artifacts/ ./
 docker rm $CONTAINER
