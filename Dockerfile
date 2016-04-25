@@ -112,7 +112,8 @@ RUN mkdir artifacts \
     && cd artifacts \
     && fpm -s dir -t deb \
     -n openresty \
-    -v ${OPENRESTY_VERSION}-${BUILD_NUM} \
+    -v ${OPENRESTY_VERSION} \
+    --iteration $BUILD_NUM \
     -C $BUILD_DIR/root \
     -p openresty_${OPENRESTY_VERSION}-${BUILD_NUM}_${ARCH}.deb \
     --description 'a high performance web server and a reverse proxy server' \
