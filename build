@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -eux
 
-docker build -t openresty-bundle-deb .
-CONTAINER=$(docker create openresty-bundle-deb)
+docker build -t openresty-bundle-deb-xenial .
+CONTAINER=$(docker create openresty-bundle-deb-xenial)
 if [ ! -d ./artifacts ]; then
     mkdir ./artifacts
 fi
